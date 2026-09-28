@@ -2,12 +2,17 @@ package com.dboycht.colorlens.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.ImageDecoder
+import android.graphics.Paint
 import android.net.Uri
 import android.util.Size
 import com.dboycht.colorlens.color.CvdType
 import com.dboycht.colorlens.color.Rgb8
 import com.dboycht.colorlens.color.VisionSimulator
+import com.dboycht.colorlens.color.WhiteBalance
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
@@ -132,6 +137,32 @@ object BitmapTools {
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         out.setPixels(pixels, 0, width, 0, 0, width, height)
         if (scaled !== bitmap) scaled.recycle()
+        return out
+    }
+
+    /**
+     * The whole photo with a white-balance correction applied (see [WhiteBalance]).
+     *
+     * Done with a [ColorMatrix] on the GPU-backed canvas rather than per-pixel
+     * arithmetic: this runs over the full-resolution photo, and `getPixels` over
+     * 2048×2048 would block the UI noticeably. The result is a **new** bitmap, so
+     * the original is kept for "取消校准".
+     */
+    fun applyGains(source: Bitmap, gains: WhiteBalance.Gains): Bitmap {
+        val out = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        paint.colorFilter = ColorMatrixColorFilter(
+            ColorMatrix(
+                floatArrayOf(
+                    gains.r, 0f, 0f, 0f, 0f,
+                    0f, gains.g, 0f, 0f, 0f,
+                    0f, 0f, gains.b, 0f, 0f,
+                    0f, 0f, 0f, 1f, 0f,
+                ),
+            ),
+        )
+        canvas.drawBitmap(source, 0f, 0f, paint)
         return out
     }
 

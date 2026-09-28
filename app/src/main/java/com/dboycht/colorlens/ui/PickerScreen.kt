@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +49,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.dboycht.colorlens.color.ColorNamer
 import com.dboycht.colorlens.color.ColorReading
+import com.dboycht.colorlens.color.WhiteBalance
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Bitmap pixels fed to the magnifier. 48 px at ~7x is enough to see a texture. */
 private const val LOUPE_CROP_PX = 48
@@ -91,6 +96,39 @@ fun PickerScreen(
         activePoint?.let { ColorNamer.read(BitmapTools.averageAround(bitmap, it.x, it.y)) }
     }
 
+    val scope = rememberCoroutineScope()
+    var calibrating by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+
+    /**
+     * The tapped colour becomes the white reference, and the photo is replaced by
+     * a corrected copy so that every screen (pick / compare / simulate) agrees on
+     * what the colours are. Runs off the main thread: the correction touches the
+     * full-resolution bitmap.
+     */
+    fun calibrateAt(point: Offset) {
+        val photo = store.bitmap ?: return
+        val reference = BitmapTools.averageAround(photo, point.x, point.y, radius = 3)
+        when (val evaluation = WhiteBalance.evaluate(reference)) {
+            is WhiteBalance.Evaluation.Unusable -> notice = evaluation.reason
+            is WhiteBalance.Evaluation.Usable -> {
+                calibrating = false
+                if (evaluation.gains.isIdentity) {
+                    notice = "这个点本来就接近纯白（${reference.toHex()}），照片不需要校正。"
+                    return
+                }
+                scope.launch {
+                    val corrected = withContext(Dispatchers.Default) {
+                        BitmapTools.applyGains(photo, evaluation.gains)
+                    }
+                    store.setCalibrated(corrected, reference)
+                    notice = "已按 ${reference.toHex()} 校准：红 ×%.2f 绿 ×%.2f 蓝 ×%.2f"
+                        .format(evaluation.gains.r, evaluation.gains.g, evaluation.gains.b)
+                }
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -110,9 +148,12 @@ fun PickerScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
+            calibrating = calibrating,
+            hint = if (calibrating) "点一下画面里的白纸或浅灰色物体" else null,
             onPick = { point ->
                 store.moveActiveMarker(point.x, point.y)
             },
+            onCalibrate = ::calibrateAt,
             onPickFinished = {
                 if (settings.autoSpeakOnPick && settings.speechEnabled) {
                     reading?.let { onSpeak(it.spokenText(settings)) }
@@ -123,6 +164,25 @@ fun PickerScreen(
         reading?.let {
             ColorCard(reading = it, showHex = settings.showHex)
         }
+
+        CalibrationRow(
+            store = store,
+            calibrating = calibrating,
+            notice = notice,
+            onStart = {
+                calibrating = true
+                notice = "点一下画面里的白纸或浅灰色物体"
+            },
+            onCancel = {
+                calibrating = false
+                notice = null
+            },
+            onClear = {
+                store.clearCalibration()
+                calibrating = false
+                notice = "已取消校准，照片恢复原样。"
+            },
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -151,6 +211,63 @@ fun PickerScreen(
                 Text("对比")
             }
             TextButton(onClick = onRetake) { Text("换照片") }
+        }
+    }
+}
+
+/**
+ * White-balance control. Deliberately quiet: one small button when unused, and
+ * one line of feedback, because most photos do not need it.
+ */
+@Composable
+private fun CalibrationRow(
+    store: PhotoStore,
+    calibrating: Boolean,
+    notice: String?,
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            when {
+                calibrating -> {
+                    Text(
+                        text = "正在校准",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    TextButton(onClick = onCancel) { Text("取消") }
+                }
+
+                store.isCalibrated -> {
+                    Text(
+                        text = "已按白纸校准",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    TextButton(onClick = onClear) { Text("取消校准") }
+                }
+
+                else -> {
+                    TextButton(onClick = onStart) { Text("白纸校准") }
+                    Text(
+                        text = "偏黄偏蓝时，先点一下白纸再取色",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        notice?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -198,7 +315,10 @@ private fun MarkerSwitcher(
 private fun PhotoCanvas(
     store: PhotoStore,
     modifier: Modifier = Modifier,
+    calibrating: Boolean = false,
+    hint: String? = null,
     onPick: (Offset) -> Unit,
+    onCalibrate: (Offset) -> Unit = {},
     onPickFinished: () -> Unit,
 ) {
     val bitmap = store.bitmap ?: return
@@ -222,7 +342,11 @@ private fun PhotoCanvas(
             .clipToBounds()
             .background(Color(0xFF05070A), RoundedCornerShape(16.dp))
             .onSizeChanged { containerSize = it }
-            .pointerInput(mapping) {
+            .pointerInput(mapping, calibrating) {
+                // While calibrating, dragging is disabled on purpose: the tap is
+                // about to *mean* something else, and a stray drag must not move
+                // the marker out from under the reading the user is looking at.
+                if (calibrating) return@pointerInput
                 detectDragGestures(
                     onDragStart = { position ->
                         mapping.toBitmap(position)?.let(onPick)
@@ -235,11 +359,15 @@ private fun PhotoCanvas(
                     onDragCancel = onPickFinished,
                 )
             }
-            .pointerInput(mapping) {
+            .pointerInput(mapping, calibrating) {
                 detectTapGestures { position ->
-                    mapping.toBitmap(position)?.let {
-                        onPick(it)
-                        onPickFinished()
+                    mapping.toBitmap(position)?.let { point ->
+                        if (calibrating) {
+                            onCalibrate(point)
+                        } else {
+                            onPick(point)
+                            onPickFinished()
+                        }
                     }
                 }
             },
@@ -250,6 +378,23 @@ private fun PhotoCanvas(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit,
         )
+
+        hint?.let {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.94f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(8.dp),
+            ) {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
+        }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             fun drawMarker(point: Offset, colour: Color, filled: Boolean) {

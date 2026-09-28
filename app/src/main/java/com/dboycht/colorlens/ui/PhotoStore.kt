@@ -42,6 +42,18 @@ class PhotoStore {
     /** Which marker the crosshair is currently moving. */
     var activeMarker: Marker by mutableStateOf(Marker.A)
 
+    /**
+     * The colour the user tapped as "this is white", or null when the photo has
+     * not been white-balanced. See [com.dboycht.colorlens.color.WhiteBalance].
+     */
+    var whiteReference: Rgb8? by mutableStateOf(null)
+        private set
+
+    /** The photo as it arrived, kept only so calibration can be undone. */
+    private var uncalibrated: Bitmap? by mutableStateOf(null)
+
+    val isCalibrated: Boolean get() = whiteReference != null
+
     val hasPhoto: Boolean get() = bitmap != null
 
     /** True once both markers exist and a comparison can be made. */
@@ -52,6 +64,9 @@ class PhotoStore {
         // garbage collector catches up is the easiest way to get killed on a
         // low-memory phone.
         this.bitmap?.takeIf { it !== bitmap }?.recycle()
+        uncalibrated?.takeIf { it !== bitmap }?.recycle()
+        uncalibrated = null
+        whiteReference = null
         this.bitmap = bitmap
         this.source = source
         val centre = Offset(bitmap.width / 2f, bitmap.height / 2f)
@@ -60,9 +75,36 @@ class PhotoStore {
         activeMarker = Marker.A
     }
 
+    /**
+     * Swaps in a white-balanced copy of the photo. The geometry is unchanged, so
+     * the markers stay exactly where they were — and because the corrected bitmap
+     * becomes *the* photo, the comparison and simulation screens see the same
+     * colours the picker reports.
+     */
+    fun setCalibrated(corrected: Bitmap, reference: Rgb8) {
+        val current = bitmap ?: return
+        if (uncalibrated == null) uncalibrated = current
+        if (current !== corrected && current !== uncalibrated) current.recycle()
+        bitmap = corrected
+        whiteReference = reference
+    }
+
+    /** Puts the original photo back and forgets the reference. */
+    fun clearCalibration() {
+        val original = uncalibrated ?: return
+        val current = bitmap
+        bitmap = original
+        uncalibrated = null
+        whiteReference = null
+        if (current !== original) current?.recycle()
+    }
+
     fun clear() {
         bitmap?.recycle()
+        uncalibrated?.takeIf { it !== bitmap }?.recycle()
         bitmap = null
+        uncalibrated = null
+        whiteReference = null
         source = PhotoSource.NONE
         markerA = null
         markerB = null

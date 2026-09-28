@@ -6,11 +6,16 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -53,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.dboycht.colorlens.BuildConfig
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
@@ -132,11 +138,14 @@ fun CameraScreen(
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
-            val capture = ImageCapture.Builder()
+            val captureBuilder = ImageCapture.Builder()
                 // Latency matters more than quality here: the user is pointing at
                 // something and wants the reading now.
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .build()
+            // Debug-only: keep the ISP metadata around so a capture can be logged
+            // with the white-balance gains that produced it. See CameraDiagnostics.
+            if (BuildConfig.DEBUG) attachDiagnostics(captureBuilder)
+            val capture = captureBuilder.build()
             provider.unbindAll()
             val boundCamera = provider.bindToLifecycle(
                 lifecycleOwner,
@@ -161,6 +170,7 @@ fun CameraScreen(
             cameraProvider = null
             imageCapture = null
             camera = null
+            CameraDiagnostics.forget()
         }
     }
 
@@ -268,6 +278,7 @@ fun CameraScreen(
                                 val raw = image.toBitmap()
                                 image.close()
                                 val upright = rotate(raw, rotation)
+                                CameraDiagnostics.logCapture(upright, PhotoStore.PhotoSource.CAMERA.name)
                                 busy = false
                                 onPhoto(
                                     BitmapTools.scaleToFit(upright, BitmapTools.MAX_EDGE),
@@ -329,6 +340,26 @@ private suspend fun awaitCameraProvider(context: Context): ProcessCameraProvider
             ContextCompat.getMainExecutor(context),
         )
     }
+
+/**
+ * Debug-only hook: subscribe to the Camera2 session's completed frames so
+ * [CameraDiagnostics] can report the white-balance gains behind a capture.
+ * Never called from a release build (`BuildConfig.DEBUG` guards the call site).
+ */
+@OptIn(ExperimentalCamera2Interop::class)
+private fun attachDiagnostics(builder: ImageCapture.Builder) {
+    Camera2Interop.Extender(builder).setSessionCaptureCallback(
+        object : CameraCaptureSession.CaptureCallback() {
+            override fun onCaptureCompleted(
+                session: CameraCaptureSession,
+                request: CaptureRequest,
+                result: TotalCaptureResult,
+            ) {
+                CameraDiagnostics.record(result)
+            }
+        },
+    )
+}
 
 private fun rotate(source: Bitmap, degrees: Int): Bitmap {
     if (degrees == 0) return source

@@ -29,6 +29,11 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isMinifyEnabled = false
+            // The debug build carries the camera white-balance diagnostics, and it
+            // gets installed alongside the real one while that is investigated.
+            // Two identical icons named 辨色助手 would be a trap, so it says what
+            // it is.
+            resValue("string", "app_name", "辨色助手·诊断")
         }
         release {
             // Compose debug payloads are large; shrink so the handed-out APK is
