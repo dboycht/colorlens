@@ -34,9 +34,16 @@ enum class CompareSensitivity(val label: String, val factor: Float, val hint: St
  * about history except what is on screen right now.
  */
 data class AppSettings(
-    val cvdType: CvdType = CvdType.DEUTERANOMALY,
+    /**
+     * Defaults to normal colour vision on purpose: the app does not know who is
+     * holding the phone, and assuming a colour weakness would make the comparison
+     * screen claim "you cannot tell these apart" about someone who can. A
+     * colour-blind user picks their own type once on the settings page — which is
+     * one tap, versus silently wrong advice for everyone else.
+     */
+    val cvdType: CvdType = CvdType.NORMAL,
     /** Severity used for the 弱 types; 盲 types are always 1.0. */
-    val severity: Float = CvdType.DEUTERANOMALY.severity,
+    val severity: Float = CvdType.NORMAL.severity,
     val speechEnabled: Boolean = true,
     val speechDetail: SpeechDetail = SpeechDetail.BRIEF,
     val autoSpeakOnPick: Boolean = true,

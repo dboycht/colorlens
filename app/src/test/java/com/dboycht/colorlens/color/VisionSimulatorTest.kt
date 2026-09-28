@@ -275,7 +275,9 @@ class VisionSimulatorTest {
             assertEquals(type, CvdType.fromId(type.name))
         }
         assertTrue("all eight diagnoses must be offered", CvdType.CHOICES.size == 8)
-        assertEquals(CvdType.DEUTERANOMALY, CvdType.fromId("nonsense"))
-        assertEquals(CvdType.DEUTERANOMALY, CvdType.fromId(null))
+        // An unreadable stored id must fall back to normal vision: the app must
+        // never invent a colour weakness the user did not choose (see AppSettings).
+        assertEquals(CvdType.NORMAL, CvdType.fromId("nonsense"))
+        assertEquals(CvdType.NORMAL, CvdType.fromId(null))
     }
 }

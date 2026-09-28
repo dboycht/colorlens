@@ -51,7 +51,7 @@ fun SettingsScreen(
         // ------------------------------------------------------------- colour vision
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             SectionTitle("你的色觉")
-            Hint("选一个最接近的。不确定就选「绿色弱 / 红色弱」，红绿色盲最常见，也不用担心选错——随时可以改。")
+            Hint("选一个最接近的。拿不准就先留「正常色觉」——对比页会按常人的分辨力给建议；知道自己偏哪一类，再选对应的，随时可以改。")
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column {
                     CvdType.CHOICES.forEachIndexed { index, type ->
@@ -83,7 +83,10 @@ fun SettingsScreen(
             }
         }
 
-        if (settings.cvdType.severity < 1f) {
+        // The slider is only meaningful for the "弱" types: 正常色觉 has nothing to
+        // simulate, and the 盲 types are pinned at 100%. Showing a 10% slider for
+        // normal vision (the default) would imply the app is simulating something.
+        if (!settings.cvdType.isNormal && settings.cvdType.severity < 1f) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = "程度：${(settings.effectiveSeverity() * 100).toInt()}%",

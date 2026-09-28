@@ -88,8 +88,16 @@ enum class CvdType(
     val isNormal: Boolean get() = family == CvdFamily.NORMAL
 
     companion object {
-        /** Stable ids for persistence; the enum name is exactly that. */
-        fun fromId(id: String?): CvdType = entries.firstOrNull { it.name == id } ?: DEUTERANOMALY
+        /**
+         * Stable ids for persistence; the enum name is exactly that.
+         *
+         * An unreadable id falls back to [NORMAL], not to a deficiency: the app
+         * must never *invent* a colour weakness the user did not choose, because
+         * the comparison screen would then tell them they cannot tell colours
+         * apart. A wrong-but-honest "normal" is recoverable; a silent wrong
+         * diagnosis is not.
+         */
+        fun fromId(id: String?): CvdType = entries.firstOrNull { it.name == id } ?: NORMAL
 
         /** Order shown in settings: most common first. */
         val CHOICES: List<CvdType> = listOf(

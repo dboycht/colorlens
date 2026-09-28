@@ -45,13 +45,16 @@ class AppSettingsTest {
     }
 
     @Test
-    fun `normal vision behaves like severe-free settings`() {
-        val settings = AppSettings(cvdType = CvdType.NORMAL)
-        assertTrue(settings.cvdType.isNormal)
-        // The default type is a partial deficiency, not 全色盲 and not normal:
-        // the app is for people who have one.
-        assertFalse(AppSettings().cvdType.isNormal)
-        assertEquals(CvdType.DEUTERANOMALY, AppSettings().cvdType)
+    fun `the default is normal vision and a deficiency is never invented`() {
+        // The app does not know who is holding the phone. Assuming a colour
+        // weakness would make the comparison screen claim "you cannot tell these
+        // apart" about someone who can, so the honest default is normal vision;
+        // a colour-blind user picks their own type once on the settings page.
+        assertTrue(AppSettings().cvdType.isNormal)
+        assertEquals(CvdType.NORMAL, AppSettings().cvdType)
+        // …and choosing a type still works.
+        val chosen = AppSettings(cvdType = CvdType.DEUTERANOMALY)
+        assertFalse(chosen.cvdType.isNormal)
     }
 
     @Test
@@ -59,9 +62,10 @@ class AppSettingsTest {
         for (type in CvdType.entries) {
             assertEquals(type, CvdType.fromId(type.name))
         }
-        // An unknown or missing id must fall back to the default, not crash.
-        assertEquals(CvdType.DEUTERANOMALY, CvdType.fromId(null))
-        assertEquals(CvdType.DEUTERANOMALY, CvdType.fromId("NOPE"))
+        // An unknown or missing id must fall back to normal vision — not crash,
+        // and above all not invent a deficiency the user never chose.
+        assertEquals(CvdType.NORMAL, CvdType.fromId(null))
+        assertEquals(CvdType.NORMAL, CvdType.fromId("NOPE"))
     }
 
     @Test
