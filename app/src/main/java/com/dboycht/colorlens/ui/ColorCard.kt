@@ -121,13 +121,16 @@ fun ColorCard(
             }
         }
 
+        // Reading matter. Fullscreen mode uses its own compact bar instead of this
+        // card, so this is the only variant: swatch, description, optional "what you
+        // see" chip.
         Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                // The "更像…/介于…之间" hint rides along with the description rather than
-                // sitting inside the swatch. Inside, at 大字号, its line pushed the name
-                // up into the hex numbers on the swatch's top edge — measured overlap
-                // 32 px — and the swatch is the one place where two texts must never
-                // collide. Joined here it costs no extra line.
+                // The "更像…/介于…之间" hint rides along with the description rather
+                // than sitting inside the swatch. Inside, at 大字号, its line pushed
+                // the name up into the hex numbers on the swatch's top edge —
+                // measured overlap 32 px — and the swatch is the one place where two
+                // texts must never collide. Joined here it costs no extra line.
                 text = if (extras.isEmpty()) reading.description else "${reading.description} · $extras",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,

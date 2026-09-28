@@ -1,5 +1,7 @@
 package com.dboycht.colorlens.ui
 
+import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -35,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,9 +62,15 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.dboycht.colorlens.color.ColorNamer
 import com.dboycht.colorlens.color.ColorReading
 import com.dboycht.colorlens.color.WhiteBalance
@@ -90,6 +99,8 @@ private const val LOUPE_CROP_PX = 48
 fun PickerScreen(
     store: PhotoStore,
     settings: AppSettings,
+    fullscreen: Boolean,
+    onFullscreenChange: (Boolean) -> Unit,
     onSpeak: (String) -> Unit,
     onOpenCompare: () -> Unit,
     onNeedPhoto: () -> Unit,
@@ -97,10 +108,37 @@ fun PickerScreen(
     modifier: Modifier = Modifier,
 ) {
     val bitmap = store.bitmap
+
+    // A picker with no photo has nothing to show fullscreen and no chrome to tap, so
+    // it always drops out of it. Measured on the device: entering fullscreen and then
+    // changing the system font scale recreates the activity, loses the photo, and
+    // left the navigation bar hidden on the empty state — with no way back.
+    LaunchedEffect(bitmap) { if (bitmap == null) onFullscreenChange(false) }
+
     if (bitmap == null) {
         EmptyPhotoState(onNeedPhoto = onNeedPhoto, modifier = modifier)
         return
     }
+
+    // Fullscreen hides the system bars as well as the app's own chrome. Both are
+    // restored on the way out — and on dispose, so a recomposition that drops this
+    // screen can never leave the phone without a status bar.
+    val view = LocalView.current
+    DisposableEffect(fullscreen) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        if (fullscreen) {
+            controller?.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+
+    // Back leaves fullscreen before it leaves the app.
+    BackHandler(enabled = fullscreen) { onFullscreenChange(false) }
 
     val activePoint = when (store.activeMarker) {
         PhotoStore.Marker.A -> store.markerA
@@ -165,13 +203,19 @@ fun PickerScreen(
      */
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val inset = 12.dp
-        val pageWidth = maxWidth - inset * 2
+        // Fullscreen gives the photo the whole width; the rows that remain keep the
+        // page inset so buttons do not touch the screen edge.
+        val pageWidth = if (fullscreen) maxWidth else maxWidth - inset * 2
         val pageHeight = maxHeight - 8.dp * 2
         val reserve = with(density) {
-            PickerLayout.reserve(
-                bodyLine = MaterialTheme.typography.bodyLarge.lineHeight.toDp(),
-                fontScale = density.fontScale,
-            )
+            if (fullscreen) {
+                PickerLayout.fullscreenReserve(fontScale = density.fontScale)
+            } else {
+                PickerLayout.reserve(
+                    bodyLine = MaterialTheme.typography.bodyLarge.lineHeight.toDp(),
+                    fontScale = density.fontScale,
+                )
+            }
         }
         val photoBox = PickerLayout.photoBox(
             pageWidth = pageWidth,
@@ -183,23 +227,31 @@ fun PickerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = inset, vertical = 8.dp),
+                .padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(PickerLayout.ROW_GAP),
         ) {
-            MarkerSwitcher(store = store, onSwitch = { marker ->
-                store.activeMarker = marker
-                if (marker == PhotoStore.Marker.B && store.markerB == null) {
-                    // Give B a sensible starting point instead of leaving it missing.
-                    store.markerB = store.markerA
-                }
-            })
+            Chrome(inset) {
+                MarkerSwitcher(store = store, onSwitch = { marker ->
+                    store.activeMarker = marker
+                    if (marker == PhotoStore.Marker.B && store.markerB == null) {
+                        // Give B a sensible starting point instead of leaving it missing.
+                        store.markerB = store.markerA
+                    }
+                })
+            }
 
             PhotoCanvas(
                 store = store,
-                modifier = Modifier
-                    .width(photoBox.width)
-                    .height(photoBox.height)
-                    .align(Alignment.CenterHorizontally),
+                modifier = if (fullscreen) {
+                    Modifier
+                        .fillMaxWidth()
+                        .height(photoBox.height)
+                } else {
+                    Modifier
+                        .width(photoBox.width)
+                        .height(photoBox.height)
+                        .align(Alignment.CenterHorizontally)
+                },
                 calibrating = calibrating,
                 hint = if (calibrating) "点一下画面里的白纸或浅灰色物体" else null,
                 onPick = { point ->
@@ -214,91 +266,176 @@ fun PickerScreen(
                 onGeometryChange = { mapping, size -> geometry = mapping to size },
             )
 
-            ZoomRow(
-                zoom = store.zoom,
-                // Disabled until the photo has been laid out: without its geometry
-                // there is nothing to zoom about, and a wrong centroid is worse
-                // than a button that visibly does nothing for one frame.
-                ready = geometry != null,
-                onZoom = { factor ->
-                    geometry?.let { (mapping, size) ->
-                        val anchor = when (store.activeMarker) {
-                            PhotoStore.Marker.A -> store.markerA
-                            PhotoStore.Marker.B -> store.markerB
+            Chrome(inset) {
+                ZoomRow(
+                    zoom = store.zoom,
+                    // Disabled until the photo has been laid out: without its geometry
+                    // there is nothing to zoom about, and a wrong centroid is worse
+                    // than a button that visibly does nothing for one frame.
+                    ready = geometry != null,
+                    onZoom = { factor ->
+                        geometry?.let { (mapping, size) ->
+                            val anchor = when (store.activeMarker) {
+                                PhotoStore.Marker.A -> store.markerA
+                                PhotoStore.Marker.B -> store.markerB
+                            }
+                            store.zoom = store.zoom.zoomedBy(factor, anchor, mapping, size)
                         }
-                        store.zoom = store.zoom.zoomedBy(factor, anchor, mapping, size)
+                    },
+                    onReset = { store.zoom = PhotoZoom.NONE },
+                    onFullscreen = if (fullscreen) null else ({ onFullscreenChange(true) }),
+                )
+            }
+
+            if (!fullscreen) {
+                // The white-balance row sits with the other controls, *outside* the
+                // scrolling region below. It holds a button, and a button must never be
+                // pushed below the fold of something that can scroll — measured on the
+                // device on 2026-09-28, it was: its bounds came back clipped at the
+                // region's bottom edge, leaving it untappable without a scroll.
+                Chrome(inset) {
+                    CalibrationRow(
+                        store = store,
+                        calibrating = calibrating,
+                        notice = notice,
+                        onStart = {
+                            calibrating = true
+                            notice = "点一下画面里的白纸或浅灰色物体"
+                        },
+                        onCancel = {
+                            calibrating = false
+                            notice = null
+                        },
+                        onClear = {
+                            store.clearCalibration()
+                            calibrating = false
+                            notice = "已取消校准，照片恢复原样。"
+                        },
+                    )
+                }
+
+                // Scrollable on purpose, and holding reading matter only: the card keeps
+                // a fixed share of the screen (so the photo above never moves), and
+                // anything that does not fit — a three-line description, the 大字号
+                // setting — scrolls here instead of pushing the photo around.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = inset),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(PickerLayout.ROW_GAP),
+                    ) {
+                        reading?.let {
+                            ColorCard(reading = it, showHex = settings.showHex)
+                        }
                     }
-                },
-                onReset = { store.zoom = PhotoZoom.NONE },
-            )
-
-            // The white-balance row sits with the other controls, *outside* the
-            // scrolling region below. It holds a button, and a button must never be
-            // pushed below the fold of something that can scroll — measured on the
-            // device on 2026-09-28, it was: its bounds came back clipped at the
-            // region's bottom edge, leaving it untappable without a scroll.
-            CalibrationRow(
-                store = store,
-                calibrating = calibrating,
-                notice = notice,
-                onStart = {
-                    calibrating = true
-                    notice = "点一下画面里的白纸或浅灰色物体"
-                },
-                onCancel = {
-                    calibrating = false
-                    notice = null
-                },
-                onClear = {
-                    store.clearCalibration()
-                    calibrating = false
-                    notice = "已取消校准，照片恢复原样。"
-                },
-            )
-
-            // Scrollable on purpose, and holding reading matter only: the card keeps a
-            // fixed share of the screen (so the photo above never moves), and anything
-            // that does not fit — a three-line description, the 大字号 setting —
-            // scrolls here instead of pushing the photo around.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(PickerLayout.ROW_GAP),
-            ) {
-                reading?.let {
-                    ColorCard(reading = it, showHex = settings.showHex)
+                }
+            } else {
+                // Fullscreen trades the reading card for a compact bar: the picked
+                // colour as a chip, its name, its numbers. The description is one 朗读
+                // (which reads it out) or one tap away, and the 64 dp it would cost is
+                // 64 dp of photo — on the reference phone that is exactly the
+                // difference between a 1017 px wide photo and a 1080 px one.
+                Chrome(inset) {
+                    reading?.let { FullscreenReading(reading = it, showHex = settings.showHex) }
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Button(
-                    onClick = { reading?.let { onSpeak(it.spokenText(settings)) } },
-                    modifier = Modifier.weight(1f),
+            Chrome(inset) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("朗读")
+                    Button(
+                        onClick = { reading?.let { onSpeak(it.spokenText(settings)) } },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("朗读")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            // Freeze the current reading as B and hand the user straight to
+                            // the comparison, which is the reason they tapped twice.
+                            val point = store.markerA
+                            if (point != null) {
+                                store.markerB = point
+                                store.activeMarker = PhotoStore.Marker.B
+                                onOpenCompare()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("对比")
+                    }
+                    if (fullscreen) {
+                        TextButton(onClick = { onFullscreenChange(false) }) { Text("退出全屏") }
+                    } else {
+                        TextButton(onClick = onRetake) { Text("换照片") }
+                    }
                 }
-                OutlinedButton(
-                    onClick = {
-                        // Freeze the current reading as B and hand the user straight to
-                        // the comparison, which is the reason they tapped twice.
-                        val point = store.markerA
-                        if (point != null) {
-                            store.markerB = point
-                            store.activeMarker = PhotoStore.Marker.B
-                            onOpenCompare()
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("对比")
-                }
-                TextButton(onClick = onRetake) { Text("换照片") }
+            }
+        }
+    }
+}
+
+/**
+ * Keeps the page's horizontal inset on a row of chrome while letting the photo run
+ * edge to edge in fullscreen mode. In the normal layout the inset is the page's, so
+ * this is only ever a wrapper.
+ */
+@Composable
+private fun Chrome(inset: androidx.compose.ui.unit.Dp, content: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = inset)) { content() }
+}
+
+/**
+ * The whole reading, in [PickerLayout.FULLSCREEN_READING] dp: the picked colour, its
+ * name, and its numbers. Everything here is text on the surface rather than text on
+ * the colour, so no contrast juggling is needed — and none of it covers the photo.
+ */
+@Composable
+private fun FullscreenReading(reading: ColorReading, showHex: Boolean) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(reading.rgb.toComposeColor())
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        RoundedCornerShape(10.dp),
+                    ),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = reading.primaryName,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = if (showHex) "${reading.hex} · ${reading.rgb.toRgbText()}" else reading.hex,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -316,6 +453,8 @@ private fun ZoomRow(
     ready: Boolean,
     onZoom: (Float) -> Unit,
     onReset: () -> Unit,
+    /** Null while already fullscreen: the way out lives on the action row. */
+    onFullscreen: (() -> Unit)?,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -334,6 +473,9 @@ private fun ZoomRow(
             Text("放大")
         }
         Spacer(modifier = Modifier.weight(1f))
+        if (onFullscreen != null) {
+            TextButton(onClick = onFullscreen) { Text("全屏") }
+        }
         TextButton(onClick = onReset, enabled = ready && zoom.isZoomed) {
             Text("复位")
         }

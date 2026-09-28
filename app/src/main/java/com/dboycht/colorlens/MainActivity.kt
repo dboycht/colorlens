@@ -14,6 +14,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -105,18 +106,34 @@ private fun App() {
 
     var tab by rememberSaveable { mutableStateOf(Tab.CAMERA) }
 
+    // Fullscreen picking hides this bar (and the system bars) so the photo can use
+    // the whole screen. It lives here rather than inside PickerScreen because the
+    // bar it hides is this Scaffold's, and it is cleared whenever the user leaves
+    // the picker — a hidden navigation bar on any other page would be a trap.
+    var pickerFullscreen by rememberSaveable { mutableStateOf(false) }
+
+    // Every way out of the picker restores the bar, not just the bar's own buttons:
+    // 对比 and 换照片 also navigate away, and a hidden navigation bar on any other
+    // page is a dead end.
+    LaunchedEffect(tab) { if (tab != Tab.PICK) pickerFullscreen = false }
+
     fun speak(text: String) = speaker.speakIfEnabled(text, settings.speechEnabled)
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                Tab.entries.forEach { entry ->
-                    NavigationBarItem(
-                        selected = tab == entry,
-                        onClick = { tab = entry },
-                        icon = { Text(entry.glyph, fontSize = 18.sp) },
-                        label = { Text(entry.label) },
-                    )
+            if (!pickerFullscreen) {
+                NavigationBar {
+                    Tab.entries.forEach { entry ->
+                        NavigationBarItem(
+                            selected = tab == entry,
+                            onClick = {
+                                if (entry != Tab.PICK) pickerFullscreen = false
+                                tab = entry
+                            },
+                            icon = { Text(entry.glyph, fontSize = 18.sp) },
+                            label = { Text(entry.label) },
+                        )
+                    }
                 }
             }
         },
@@ -133,6 +150,8 @@ private fun App() {
                 Tab.PICK -> PickerScreen(
                     store = photos,
                     settings = settings,
+                    fullscreen = pickerFullscreen,
+                    onFullscreenChange = { pickerFullscreen = it },
                     onSpeak = ::speak,
                     onOpenCompare = { tab = Tab.COMPARE },
                     onNeedPhoto = { tab = Tab.CAMERA },

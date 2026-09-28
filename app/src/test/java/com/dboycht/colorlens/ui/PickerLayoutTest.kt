@@ -66,6 +66,81 @@ class PickerLayoutTest {
     }
 
     @Test
+    fun `fullscreen gives the photo the whole screen width`() {
+        // Reference phone: the normal layout is handed 336x656 dp and 222 dp of photo
+        // comes out of it; fullscreen is handed the full 360 dp width and ~784 dp of
+        // height (system bars and the app's own navigation bar hidden), and its 252 dp
+        // of chrome leaves room for the photo to reach the width limit instead of the
+        // height limit — which is the whole point of the mode.
+        val normal = PickerLayout.photoBox(336.dp, 656.dp, photoAspect = 0.75f, reserve = reserve)
+        val full = PickerLayout.photoBox(
+            pageWidth = 360.dp,
+            pageHeight = 784.dp - 16.dp,
+            photoAspect = 0.75f,
+            reserve = PickerLayout.fullscreenReserve(fontScale = 1f),
+        )
+        assertTrue("fullscreen $full must be much taller than $normal", full.height > normal.height * 2)
+        assertEquals("fullscreen must use the whole page width", 360.0, full.width.value.toDouble(), 0.01)
+    }
+
+    @Test
+    fun `the fullscreen budget is tight, not padded`() {
+        // Four rows plus four 10 dp gaps plus the compact reading bar: 48 + 48 + 68 +
+        // 48 + 40 = 252 dp. Every dp above that is a dp of photo in the one mode whose
+        // entire reason to exist is a bigger photo.
+        val full = PickerLayout.fullscreenReserve(fontScale = 1f)
+        assertEquals(252.0, full.value.toDouble(), 0.01)
+    }
+
+    @Test
+    fun `fullscreen also pays for the font scale`() {
+        // The reading bar holds two lines of text (titleLarge + labelLarge = 48 dp at
+        // 1×) and the four rows still grow: at 大字号 the mode must not start clipping
+        // its own action row off the bottom of the screen.
+        val full = PickerLayout.fullscreenReserve(fontScale = 1.3f)
+        val tight = PickerLayout.fullscreenReserve(fontScale = 1f)
+        assertEquals(28.8, (full - tight).value.toDouble(), 0.2)
+        assertEquals(tight.value.toDouble(), PickerLayout.fullscreenReserve(fontScale = 0.85f).value.toDouble(), 0.01)
+    }
+
+    @Test
+    fun `fullscreen always has a way out`() {
+        // A mode that hides the navigation bar is a trap unless leaving it is both
+        // visible and reachable by the system back gesture.
+        val picker = File("src/main/java/com/dboycht/colorlens/ui/PickerScreen.kt").readText()
+        assertTrue("fullscreen must size the photo from its own reserve", picker.contains("PickerLayout.fullscreenReserve("))
+        assertTrue("fullscreen needs an entry point", picker.contains("onFullscreenChange(true)"))
+        assertTrue("fullscreen needs a visible exit", picker.contains("退出全屏"))
+        assertTrue("the back gesture must leave fullscreen first", picker.contains("BackHandler(enabled = fullscreen)"))
+        assertTrue("the system bars must be restored on the way out", picker.contains("controller?.show(WindowInsetsCompat.Type.systemBars())"))
+        // Device-found traps: fullscreen + a lost photo (font-scale change recreates
+        // the activity) left the navigation bar hidden on the empty state, and
+        // fullscreen + 对比 navigated to another page with it still hidden.
+        assertTrue(
+            "fullscreen must drop out when the photo is gone",
+            picker.contains("if (bitmap == null) onFullscreenChange(false)"),
+        )
+        assertTrue(
+            "the empty state must come after that check, not before it",
+            picker.indexOf("if (bitmap == null) onFullscreenChange(false)") <
+                picker.indexOf("EmptyPhotoState(onNeedPhoto"),
+        )
+        val activity = File("src/main/java/com/dboycht/colorlens/MainActivity.kt").readText()
+        assertTrue(
+            "leaving the picker must un-hide the navigation bar",
+            activity.contains("if (entry != Tab.PICK) pickerFullscreen = false"),
+        )
+        assertTrue(
+            "every route out of the picker must restore it",
+            activity.contains("LaunchedEffect(tab) { if (tab != Tab.PICK) pickerFullscreen = false }"),
+        )
+        assertTrue(
+            "the navigation bar must be hidden in fullscreen",
+            activity.contains("if (!pickerFullscreen)"),
+        )
+    }
+
+    @Test
     fun `a smaller font scale does not shrink the reserve below the measured budget`() {
         // The rows cannot go below Material's 48 dp touch target, so the reserve must
         // not pretend they can.

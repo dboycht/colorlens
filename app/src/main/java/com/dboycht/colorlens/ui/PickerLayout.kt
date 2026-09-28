@@ -88,6 +88,38 @@ object PickerLayout {
     }
 
     /**
+     * The compact reading bar fullscreen mode uses instead of the card: a 40 dp
+     * swatch chip beside two lines of text.
+     */
+    val FULLSCREEN_READING = 68.dp
+
+    /**
+     * The text inside that bar: titleLarge (28 dp) + labelLarge (20 dp) at 1×. It is
+     * here because the bar is text, so unlike the card's swatch it grows with the
+     * font scale — at 大字号 it needs 14 dp more, and the photo must pay for it rather
+     * than the action row falling off the bottom of the screen.
+     */
+    private val FULLSCREEN_READING_TEXT = 48.dp
+
+    /**
+     * The chrome kept in fullscreen mode: the marker row, the zoom row, the compact
+     * reading bar and the action row. Four rows, 252 dp at 1× — everything else
+     * stands aside, including the description: fullscreen exists to look closely,
+     * and 朗读 reads the description out anyway.
+     *
+     * On the reference phone hiding the system bars and the app's own navigation bar
+     * hands the picker about 784 dp of height, so 252 dp of chrome leaves the photo
+     * 480 dp — the full screen width at this photo's 3:4 aspect, 1080x1440 px, against
+     * 500x667 px in the normal layout.
+     */
+    fun fullscreenReserve(fontScale: Float): Dp {
+        val growth = (fontScale - 1f).coerceAtLeast(0f)
+        val rows = MARKER_ROW + ZOOM_ROW + BUTTON_ROW + ROW_GAP * 4 + ROW_GROWTH_PER_SCALE * growth
+        val reading = FULLSCREEN_READING + FULLSCREEN_READING_TEXT * growth
+        return rows + reading
+    }
+
+    /**
      * The photo box: exactly the photo's aspect ratio (so there are no dead black
      * bars eating the width, which is what the first version did), as wide as the
      * page allows, never taller than the page can afford.
