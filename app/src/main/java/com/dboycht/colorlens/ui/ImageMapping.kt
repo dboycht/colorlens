@@ -68,4 +68,18 @@ class ImageMapping(
         if (x < 0f || y < 0f || x >= bitmapWidth || y >= bitmapHeight) return null
         return Offset(x, y)
     }
+
+    /** Bitmap point -> container position, including the view's zoom/pan. */
+    fun toView(point: Offset, zoom: PhotoZoom): Offset = toView(point) * zoom.scale + zoom.offset
+
+    /**
+     * Container position -> bitmap point, including the view's zoom/pan. The zoom is
+     * undone first, so "where did the user touch" keeps meaning the same thing at
+     * every zoom level — which is the only reason zooming helps the user pick a
+     * colour rather than just look at the photo.
+     */
+    fun toBitmap(position: Offset, zoom: PhotoZoom): Offset? {
+        if (!isUsable || zoom.scale <= 0f) return null
+        return toBitmap((position - zoom.offset) / zoom.scale)
+    }
 }

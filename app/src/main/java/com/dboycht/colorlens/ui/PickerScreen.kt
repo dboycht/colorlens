@@ -4,20 +4,29 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -26,10 +35,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,10 +48,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -100,6 +115,12 @@ fun PickerScreen(
     var calibrating by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
 
+    // The photo box's geometry, as reported by PhotoCanvas after layout. The zoom
+    // buttons need it: zooming about the crosshair requires knowing where the
+    // crosshair currently is on screen.
+    var geometry by remember { mutableStateOf<Pair<ImageMapping, IntSize>?>(null) }
+    val density = LocalDensity.current
+
     /**
      * The tapped colour becomes the white reference, and the photo is replaced by
      * a corrected copy so that every screen (pick / compare / simulate) agrees on
@@ -129,88 +150,192 @@ fun PickerScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        MarkerSwitcher(store = store, onSwitch = { marker ->
-            store.activeMarker = marker
-            if (marker == PhotoStore.Marker.B && store.markerB == null) {
-                // Give B a sensible starting point instead of leaving it missing.
-                store.markerB = store.markerA
-            }
-        })
-
-        PhotoCanvas(
-            store = store,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            calibrating = calibrating,
-            hint = if (calibrating) "点一下画面里的白纸或浅灰色物体" else null,
-            onPick = { point ->
-                store.moveActiveMarker(point.x, point.y)
-            },
-            onCalibrate = ::calibrateAt,
-            onPickFinished = {
-                if (settings.autoSpeakOnPick && settings.speechEnabled) {
-                    reading?.let { onSpeak(it.spokenText(settings)) }
-                }
-            },
-        )
-
-        reading?.let {
-            ColorCard(reading = it, showHex = settings.showHex)
+    /**
+     * ## Why this screen is measured instead of weighted
+     *
+     * The photo used to be `weight(1f)`: "whatever the text does not need". A
+     * description that wrapped onto a second line therefore took a line of height
+     * away from the photo, and the photo visibly rescaled while the user was moving
+     * the crosshair — the exact complaint that produced this layout (2026-09-28).
+     *
+     * Now the photo box is sized from the page and the photo's own aspect ratio
+     * ([PickerLayout.photoBox]), and the reading area below is given a fixed share
+     * that always reserves the worst case: short text leaves slack, long text
+     * scrolls inside its own box, and the photo cannot move for either reason.
+     */
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val inset = 12.dp
+        val pageWidth = maxWidth - inset * 2
+        val pageHeight = maxHeight - 8.dp * 2
+        val reserve = with(density) {
+            PickerLayout.reserve(
+                bodyLine = MaterialTheme.typography.bodyLarge.lineHeight.toDp(),
+                fontScale = density.fontScale,
+            )
         }
-
-        CalibrationRow(
-            store = store,
-            calibrating = calibrating,
-            notice = notice,
-            onStart = {
-                calibrating = true
-                notice = "点一下画面里的白纸或浅灰色物体"
-            },
-            onCancel = {
-                calibrating = false
-                notice = null
-            },
-            onClear = {
-                store.clearCalibration()
-                calibrating = false
-                notice = "已取消校准，照片恢复原样。"
-            },
+        val photoBox = PickerLayout.photoBox(
+            pageWidth = pageWidth,
+            pageHeight = pageHeight,
+            photoAspect = bitmap.width / bitmap.height.toFloat(),
+            reserve = reserve,
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = inset, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(PickerLayout.ROW_GAP),
         ) {
-            Button(
-                onClick = { reading?.let { onSpeak(it.spokenText(settings)) } },
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("朗读")
-            }
-            OutlinedButton(
-                onClick = {
-                    // Freeze the current reading as B and hand the user straight to
-                    // the comparison, which is the reason they tapped twice.
-                    val point = store.markerA
-                    if (point != null) {
-                        store.markerB = point
-                        store.activeMarker = PhotoStore.Marker.B
-                        onOpenCompare()
+            MarkerSwitcher(store = store, onSwitch = { marker ->
+                store.activeMarker = marker
+                if (marker == PhotoStore.Marker.B && store.markerB == null) {
+                    // Give B a sensible starting point instead of leaving it missing.
+                    store.markerB = store.markerA
+                }
+            })
+
+            PhotoCanvas(
+                store = store,
+                modifier = Modifier
+                    .width(photoBox.width)
+                    .height(photoBox.height)
+                    .align(Alignment.CenterHorizontally),
+                calibrating = calibrating,
+                hint = if (calibrating) "点一下画面里的白纸或浅灰色物体" else null,
+                onPick = { point ->
+                    store.moveActiveMarker(point.x, point.y)
+                },
+                onCalibrate = ::calibrateAt,
+                onPickFinished = {
+                    if (settings.autoSpeakOnPick && settings.speechEnabled) {
+                        reading?.let { onSpeak(it.spokenText(settings)) }
                     }
                 },
-                modifier = Modifier.weight(1f),
+                onGeometryChange = { mapping, size -> geometry = mapping to size },
+            )
+
+            ZoomRow(
+                zoom = store.zoom,
+                // Disabled until the photo has been laid out: without its geometry
+                // there is nothing to zoom about, and a wrong centroid is worse
+                // than a button that visibly does nothing for one frame.
+                ready = geometry != null,
+                onZoom = { factor ->
+                    geometry?.let { (mapping, size) ->
+                        val anchor = when (store.activeMarker) {
+                            PhotoStore.Marker.A -> store.markerA
+                            PhotoStore.Marker.B -> store.markerB
+                        }
+                        store.zoom = store.zoom.zoomedBy(factor, anchor, mapping, size)
+                    }
+                },
+                onReset = { store.zoom = PhotoZoom.NONE },
+            )
+
+            // The white-balance row sits with the other controls, *outside* the
+            // scrolling region below. It holds a button, and a button must never be
+            // pushed below the fold of something that can scroll — measured on the
+            // device on 2026-09-28, it was: its bounds came back clipped at the
+            // region's bottom edge, leaving it untappable without a scroll.
+            CalibrationRow(
+                store = store,
+                calibrating = calibrating,
+                notice = notice,
+                onStart = {
+                    calibrating = true
+                    notice = "点一下画面里的白纸或浅灰色物体"
+                },
+                onCancel = {
+                    calibrating = false
+                    notice = null
+                },
+                onClear = {
+                    store.clearCalibration()
+                    calibrating = false
+                    notice = "已取消校准，照片恢复原样。"
+                },
+            )
+
+            // Scrollable on purpose, and holding reading matter only: the card keeps a
+            // fixed share of the screen (so the photo above never moves), and anything
+            // that does not fit — a three-line description, the 大字号 setting —
+            // scrolls here instead of pushing the photo around.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(PickerLayout.ROW_GAP),
             ) {
-                Text("对比")
+                reading?.let {
+                    ColorCard(reading = it, showHex = settings.showHex)
+                }
             }
-            TextButton(onClick = onRetake) { Text("换照片") }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = { reading?.let { onSpeak(it.spokenText(settings)) } },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("朗读")
+                }
+                OutlinedButton(
+                    onClick = {
+                        // Freeze the current reading as B and hand the user straight to
+                        // the comparison, which is the reason they tapped twice.
+                        val point = store.markerA
+                        if (point != null) {
+                            store.markerB = point
+                            store.activeMarker = PhotoStore.Marker.B
+                            onOpenCompare()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("对比")
+                }
+                TextButton(onClick = onRetake) { Text("换照片") }
+            }
+        }
+    }
+}
+
+/**
+ * 放大 / 缩小 / 复位 — the pinch gesture is a shortcut for people who know it, but
+ * a colour-picking app cannot make "put two fingers on the screen and pinch" the
+ * only way to look closer, so the same thing is a pair of buttons. Zooming is
+ * anchored on the crosshair, so the spot being sampled stays put while it grows.
+ */
+@Composable
+private fun ZoomRow(
+    zoom: PhotoZoom,
+    ready: Boolean,
+    onZoom: (Float) -> Unit,
+    onReset: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        TextButton(onClick = { onZoom(1f / ZOOM_STEP) }, enabled = ready && zoom.isZoomed) {
+            Text("缩小")
+        }
+        Text(
+            text = "×%.1f".format(zoom.scale),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(onClick = { onZoom(ZOOM_STEP) }, enabled = ready && zoom.scale < PhotoZoom.MAX_SCALE) {
+            Text("放大")
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        TextButton(onClick = onReset, enabled = ready && zoom.isZoomed) {
+            Text("复位")
         }
     }
 }
@@ -310,6 +435,15 @@ private fun MarkerSwitcher(
  *
  * Kept in its own composable so that dragging only recomposes this part, not the
  * colour card's layout.
+ *
+ * ## Gestures (one pipeline, because they have to agree)
+ *
+ * One finger moves the crosshair, two fingers pinch to zoom and drag to pan. They
+ * live in a single `awaitEachGesture` loop rather than two `pointerInput` modifiers:
+ * with separate detectors the second finger of a pinch also feeds the drag detector,
+ * and the crosshair would crawl across the photo every time the user zoomed.
+ * After a pinch has started, the rest of that gesture is treated as pure
+ * zoom/pan — lifting one finger must not suddenly re-aim the crosshair.
  */
 @Composable
 private fun PhotoCanvas(
@@ -320,6 +454,7 @@ private fun PhotoCanvas(
     onPick: (Offset) -> Unit,
     onCalibrate: (Offset) -> Unit = {},
     onPickFinished: () -> Unit,
+    onGeometryChange: (ImageMapping, IntSize) -> Unit = { _, _ -> },
 ) {
     val bitmap = store.bitmap ?: return
     val image = remember(bitmap) { bitmap.asImageBitmap() }
@@ -327,7 +462,18 @@ private fun PhotoCanvas(
     val mapping = remember(containerSize, bitmap) {
         ImageMapping(containerSize, bitmap.width, bitmap.height)
     }
+    val zoom = store.zoom
     val density = LocalDensity.current
+
+    // The gesture loop must not be torn down by the very state it writes, so it
+    // reads the current values through refs instead of taking them as keys: a
+    // `pointerInput(zoom)` would cancel the pinch on the first zoom change.
+    val zoomRef = rememberUpdatedState(zoom)
+    val mappingRef = rememberUpdatedState(mapping)
+
+    LaunchedEffect(mapping, containerSize) {
+        if (mapping.isUsable) onGeometryChange(mapping, containerSize)
+    }
     val loupeSizePx = with(density) { 120.dp.toPx() }
     val loupeCrop = remember(bitmap, store.markerA, store.markerB, store.activeMarker) {
         val point = when (store.activeMarker) {
@@ -342,40 +488,68 @@ private fun PhotoCanvas(
             .clipToBounds()
             .background(Color(0xFF05070A), RoundedCornerShape(16.dp))
             .onSizeChanged { containerSize = it }
-            .pointerInput(mapping, calibrating) {
+            .pointerInput(bitmap, calibrating) {
                 // While calibrating, dragging is disabled on purpose: the tap is
                 // about to *mean* something else, and a stray drag must not move
                 // the marker out from under the reading the user is looking at.
-                if (calibrating) return@pointerInput
-                detectDragGestures(
-                    onDragStart = { position ->
-                        mapping.toBitmap(position)?.let(onPick)
-                    },
-                    onDrag = { change, _ ->
-                        change.consume()
-                        mapping.toBitmap(change.position)?.let(onPick)
-                    },
-                    onDragEnd = onPickFinished,
-                    onDragCancel = onPickFinished,
-                )
-            }
-            .pointerInput(mapping, calibrating) {
-                detectTapGestures { position ->
-                    mapping.toBitmap(position)?.let { point ->
-                        if (calibrating) {
-                            onCalibrate(point)
-                        } else {
-                            onPick(point)
-                            onPickFinished()
-                        }
+                if (calibrating) {
+                    detectTapGestures { position ->
+                        mappingRef.value.toBitmap(position, zoomRef.value)?.let(onCalibrate)
                     }
+                    return@pointerInput
+                }
+
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // `live` rather than `zoomRef.value`: several gesture events can
+                    // arrive before the recomposition that would refresh the ref, and
+                    // compounding against a stale scale drifts badly during a pinch.
+                    var live = zoomRef.value
+                    mappingRef.value.toBitmap(down.position, live)?.let(onPick)
+                    var pinched = false
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.count { it.pressed }
+                        if (pressed >= 2) {
+                            pinched = true
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+                            val centroid = event.calculateCentroid(useCurrent = true)
+                            if (centroid.isSpecified && (zoomChange != 1f || panChange != Offset.Zero)) {
+                                live = live.zoomedBy(zoomChange, centroid).pannedBy(panChange)
+                                    .clampedTo(mappingRef.value, size)
+                                store.zoom = live
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        } else if (!pinched) {
+                            val change = event.changes.firstOrNull { it.pressed } ?: break
+                            if (change.positionChanged()) {
+                                change.consume()
+                                mappingRef.value.toBitmap(change.position, live)?.let(onPick)
+                            }
+                        }
+                        if (event.changes.none { it.pressed }) break
+                    }
+                    onPickFinished()
                 }
             },
     ) {
         Image(
             bitmap = image,
             contentDescription = "待取色的照片",
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                // The same `f * scale + offset` convention that ImageMapping uses to
+                // hit-test, so what the user sees and what gets sampled cannot drift
+                // apart — the origin is the top-left corner, not the centre.
+                .graphicsLayer(
+                    scaleX = zoom.scale,
+                    scaleY = zoom.scale,
+                    translationX = zoom.offset.x,
+                    translationY = zoom.offset.y,
+                    transformOrigin = TransformOrigin(0f, 0f),
+                ),
             contentScale = ContentScale.Fit,
         )
 
@@ -398,7 +572,10 @@ private fun PhotoCanvas(
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             fun drawMarker(point: Offset, colour: Color, filled: Boolean) {
-                val centre = mapping.toView(point)
+                // The crosshair is drawn at the *zoomed* position and keeps its screen
+                // size: a marker that grew with the photo would cover the very pixels
+                // the user zoomed in to look at.
+                val centre = mapping.toView(point, zoom)
                 if (filled) {
                     drawCircle(color = colour, radius = 9f, center = centre)
                 }
@@ -426,7 +603,7 @@ private fun PhotoCanvas(
             PhotoStore.Marker.B -> store.markerB
         }
         if (activePoint != null && mapping.isUsable && loupeCrop != null) {
-            val viewPoint = mapping.toView(activePoint)
+            val viewPoint = mapping.toView(activePoint, zoom)
             val marginPx = with(density) { 12.dp.toPx() }
             val above = viewPoint.y - loupeSizePx - marginPx >= 0f
             val rawY = if (above) viewPoint.y - loupeSizePx - marginPx else viewPoint.y + marginPx
@@ -471,7 +648,7 @@ private fun PhotoCanvas(
                 .padding(10.dp),
         ) {
             Text(
-                text = "拖动或点一下照片，选你要问的位置",
+                text = "拖动或点一下照片选位置 · 两指捏合放大",
                 style = MaterialTheme.typography.labelMedium,
                 color = Color.White,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -508,9 +685,6 @@ fun ColorReading.spokenText(settings: AppSettings): String = when (settings.spee
 
 /** Small helper used by the magnifier's geometry in tests and previews. */
 internal fun loupeCropPx(): Int = LOUPE_CROP_PX
-
-/** Shared empty height so a missing card does not jump the layout around. */
-internal val CARD_RESERVED_HEIGHT = 132.dp
 
 @Composable
 internal fun ThinDivider(modifier: Modifier = Modifier) {

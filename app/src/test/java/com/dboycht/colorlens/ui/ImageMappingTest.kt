@@ -72,4 +72,16 @@ class ImageMappingTest {
         assertEquals(Offset(99f, 99f), mapping.toBitmap(Offset(99f, 99f)))
         assertNull(mapping.toBitmap(Offset(100f, 50f)))
     }
+
+    @Test
+    fun `the zoom-aware overloads reduce to the plain ones at scale one`() {
+        val mapping = ImageMapping(IntSize(200, 200), bitmapWidth = 200, bitmapHeight = 100)
+        val point = Offset(10f, 10f)
+        val touch = Offset(100f, 100f)
+        assertEquals(mapping.toView(point), mapping.toView(point, PhotoZoom.NONE))
+        assertEquals(mapping.toBitmap(touch), mapping.toBitmap(touch, PhotoZoom.NONE))
+        // The letterbox rule has to survive the zoom path too.
+        assertNull(mapping.toBitmap(Offset(100f, 10f), PhotoZoom.NONE))
+        assertNull("a zero scale must return null, not NaN", mapping.toBitmap(touch, PhotoZoom(scale = 0f)))
+    }
 }

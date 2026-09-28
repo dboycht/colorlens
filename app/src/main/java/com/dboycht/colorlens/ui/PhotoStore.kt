@@ -43,6 +43,15 @@ class PhotoStore {
     var activeMarker: Marker by mutableStateOf(Marker.A)
 
     /**
+     * How the photo is zoomed/panned in the picker.
+     *
+     * It lives here rather than in the screen so that switching tabs does not throw
+     * the user's zoom away mid-task, and it is reset whenever the photo changes —
+     * the zoom of the previous photo means nothing on the next one.
+     */
+    var zoom: PhotoZoom by mutableStateOf(PhotoZoom.NONE)
+
+    /**
      * The colour the user tapped as "this is white", or null when the photo has
      * not been white-balanced. See [com.dboycht.colorlens.color.WhiteBalance].
      */
@@ -73,6 +82,7 @@ class PhotoStore {
         markerA = centre
         markerB = null
         activeMarker = Marker.A
+        zoom = PhotoZoom.NONE
     }
 
     /**
@@ -109,6 +119,7 @@ class PhotoStore {
         markerA = null
         markerB = null
         activeMarker = Marker.A
+        zoom = PhotoZoom.NONE
     }
 
     /** Moves the active marker, clamped into the bitmap. */

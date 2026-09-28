@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dboycht.colorlens.color.ColorReading
 import com.dboycht.colorlens.color.Rgb8
@@ -48,6 +50,13 @@ fun ColorCard(
     seenAs: Rgb8? = null,
     caption: String? = null,
 ) {
+    val extras = buildList {
+        reading.specificHint?.let { add("更像$it") }
+        if (reading.alternatives.isNotEmpty()) {
+            add("介于${reading.baseWord}和${reading.alternatives.first()}之间")
+        }
+    }.joinToString(" · ")
+
     Column(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -68,55 +77,61 @@ fun ColorCard(
                     fontWeight = FontWeight.Bold,
                     color = reading.rgb.readableTextColor(),
                 )
-                val extras = buildList {
-                    reading.specificHint?.let { add("更像$it") }
-                    if (reading.alternatives.isNotEmpty()) {
-                        add("介于${reading.baseWord}和${reading.alternatives.first()}之间")
-                    }
-                }
-                if (extras.isNotEmpty()) {
+            }
+
+            /**
+             * The colour numbers and the photo's source share the top edge of the
+             * swatch. Hex/RGB are reference data rather than reading matter, and every
+             * row they occupy *below* the swatch is a row the photo above loses — on
+             * the reference phone that trade was 22 dp of photo for one line of
+             * numbers. The caption yields (ellipsis) if 大字号 crowds it, because
+             * "where the photo came from" is the least important thing on screen.
+             */
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (caption != null) {
                     Text(
-                        text = extras.joinToString(" · "),
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = caption,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = reading.rgb.readableTextColor().copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+                if (caption == null || showHex) Spacer(modifier = Modifier.weight(1f))
+                if (showHex) {
+                    Text(
+                        text = reading.hex,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = reading.rgb.readableTextColor().copy(alpha = 0.85f),
+                    )
+                    Text(
+                        text = reading.rgb.toRgbText(),
+                        style = MaterialTheme.typography.labelLarge,
                         color = reading.rgb.readableTextColor().copy(alpha = 0.85f),
                     )
                 }
-            }
-            caption?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = reading.rgb.readableTextColor().copy(alpha = 0.75f),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(14.dp),
-                )
             }
         }
 
         Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                text = reading.description,
+                // The "更像…/介于…之间" hint rides along with the description rather than
+                // sitting inside the swatch. Inside, at 大字号, its line pushed the name
+                // up into the hex numbers on the swatch's top edge — measured overlap
+                // 32 px — and the swatch is the one place where two texts must never
+                // collide. Joined here it costs no extra line.
+                text = if (extras.isEmpty()) reading.description else "${reading.description} · $extras",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (showHex) {
-                    Text(
-                        text = reading.hex,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = reading.rgb.toRgbText(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
             seenAs?.let { seen ->
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
