@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- App mark: a sampling lens (ring + crosshair ticks) with a colour dot in the
-     middle. Drawn as vectors so no PNG densities are needed. -->
+<!-- App mark: a colour-sampling reticle — a lens ring with crosshair ticks and the
+     sampled colour as a dot in the middle. Vector, so no PNG densities are needed.
+
+     GEOMETRY IS LOAD-BEARING, not decoration. An adaptive icon is a 108×108 canvas
+     of which the launcher may show only the middle 66×66 circle (radius 33 around
+     54,54). Draw outside it and the mask slices the mark — which is exactly what
+     the first version shipped: the top tick reached y=5, the colour chips reached
+     y=82 and x=22/86, and the whole composition sat at y≈43 instead of 54, so a
+     round mask cut it into pieces ("图标显示不全", reported 2026-09-28).
+
+     LauncherIconTest asserts every element stays inside radius 33 of the centre and
+     that the mark is centred, so this cannot regress silently.
+
+     Extent of each element from the canvas centre (54,54):
+       ring  r=24, stroke 5, butt caps        → 26.5
+       ticks r=17…28, stroke 3.5, round caps  → 29.75
+       dot   r=9                              → 9
+     Nothing else may be added here without recomputing those numbers. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -9,30 +25,19 @@
 
     <!-- lens ring -->
     <path
-        android:pathData="M54,30 m-17,0 a17,17 0 1,0 34,0 a17,17 0 1,0 -34,0"
-        android:strokeColor="#FFF2F6FF"
-        android:strokeWidth="4.5" />
+        android:pathData="M54,54 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0"
+        android:strokeColor="#FFE9EEF7"
+        android:strokeWidth="5" />
 
-    <!-- centre sampling dot -->
+    <!-- the sampled colour, in the middle -->
     <path
-        android:pathData="M54,30 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
+        android:pathData="M54,54 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0"
         android:fillColor="#FF53E1C0" />
 
-    <!-- crosshair ticks -->
+    <!-- crosshair ticks, centred on the ring: r 17 → 28 on all four axes -->
     <path
-        android:pathData="M54,5 L54,13 M54,47 L54,55 M29,30 L37,30 M71,30 L79,30"
-        android:strokeColor="#FFF2F6FF"
-        android:strokeWidth="4.5"
+        android:pathData="M54,26 L54,37 M54,82 L54,71 M26,54 L37,54 M82,54 L71,54"
+        android:strokeColor="#FFE9EEF7"
+        android:strokeWidth="3.5"
         android:strokeLineCap="round" />
-
-    <!-- three colour chips below the lens (the palette being told apart) -->
-    <path
-        android:pathData="M30,74 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"
-        android:fillColor="#FFFF6B6B" />
-    <path
-        android:pathData="M54,74 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"
-        android:fillColor="#FFFFD166" />
-    <path
-        android:pathData="M78,74 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"
-        android:fillColor="#FF4D96FF" />
 </vector>

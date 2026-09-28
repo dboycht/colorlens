@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon (API 26+; this app's minSdk is 28, so this is the only form that
+     ever ships — no legacy PNG densities). The launcher is free to mask this with a
+     circle, a squircle or the user's chosen shape, which is why the foreground art
+     has to stay inside the middle 66×66 safe circle: see ic_launcher_foreground.xml
+     and LauncherIconTest. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

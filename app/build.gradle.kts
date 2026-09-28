@@ -20,7 +20,9 @@ android {
         // Single source of truth for the version: `versionName` below.
         // `versionCode` is only bumped on release.
         versionCode = 1
-        versionName = "1.0.1"
+        // 1.0.1 was tagged on 2026-09-28; by the project's convention the next
+        // development round bumps the patch number, so this round is 1.0.2.
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
