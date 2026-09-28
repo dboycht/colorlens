@@ -231,6 +231,39 @@ class ColorNamerTest {
     }
 
     @Test
+    fun `wood and tan are brown, and the vivid warm colours are not`() {
+        // Reported from a real photo: a wooden surface came back as 「灰橙」.
+        // The cause was the brown family's hue window stopping at 70° while wood,
+        // tan, khaki and sand all sit at 74–86°, so every wooden surface fell
+        // through to 橙. The window now reaches 88° and vivid warm colours are
+        // kept out by chroma instead (see DEVELOPMENT.md §"色名依据").
+        for (wood in listOf(
+            "#D8C3A5", // white oak   76.8° / C 0.047
+            "#C8A97E", // oak         75.5° / C 0.068
+            "#A99576", // the tan actually measured off the reported photo
+            "#D2B48C", // bamboo
+            "#C3B091", // khaki-ish
+            "#B98C5A", // maple floor
+            "#DEB887", // burlywood
+            "#CD853F", // peru
+            "#8B5A2B", // leather
+        )) {
+            assertEquals("$wood must be read as a brown", "棕", read(wood).baseWord)
+        }
+
+        // …and nothing that a person would call orange, yellow or red may be
+        // swallowed by the wider window: these are the boundaries that matter.
+        assertEquals("橙", read("#FFA500").baseWord) // orange      70.7° / C 0.171
+        assertEquals("橙", read("#FFB347").baseWord) // light orange 72.1° / C 0.149
+        assertEquals("橙", read("#E67E22").baseWord) // carrot       55.5° / C 0.160
+        assertEquals("黄", read("#FFD700").baseWord) // gold         95.3° (beyond the window)
+        assertEquals("黄", read("#DAA520").baseWord) // goldenrod    84.0° / C 0.147 (too vivid)
+        assertEquals("米", read("#F5DEB3").baseWord) // wheat        pale enough to be 米
+        assertEquals("红", read("#8B0000").baseWord) // dark red      29.2° / C 0.164
+        assertEquals("红", read("#A52A2A").baseWord) // CSS "brown"  25.6° / C 0.160
+    }
+
+    @Test
     fun `every colour gets a complete reading with all display fields populated`() {
         for (r in 0..255 step 51) {
             for (g in 0..255 step 51) {

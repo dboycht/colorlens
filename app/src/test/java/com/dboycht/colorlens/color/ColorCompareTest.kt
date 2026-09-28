@@ -163,13 +163,13 @@ class ColorCompareTest {
 
     @Test
     fun `muted colours can lose their family even when the raw difference is small`() {
-        // Found on a real photo: a greyish brown and a muted orange. To a normal
-        // observer these are two different colour families; a deuteranope sees one
-        // yellow-grey. The old test — "did most of the chromatic *distance*
-        // disappear" — missed this case entirely, because two muted colours never
-        // had much chromatic distance to begin with, and the app ended up telling
-        // the user not to worry.
-        val verdict = pair("#85796C", "#B07A3C", CvdType.DEUTERANOMALY)
+        // Found on a real photo: a muted brown (wood) next to a muted green
+        // (foliage). To a normal observer these are two different colour
+        // families; a deuteranope sees one yellow-grey. The old test — "did most
+        // of the chromatic *distance* disappear" — missed this case entirely,
+        // because two muted colours never had much chromatic distance to begin
+        // with, and the app ended up telling the user not to worry.
+        val verdict = pair("#85796C", "#7D8B60", CvdType.DEUTERANOMALY)
 
         assertFalse(
             "these must be different families to normal vision: ${verdict.first.baseWord} / ${verdict.second.baseWord}",
@@ -194,6 +194,24 @@ class ColorCompareTest {
             "headline must distinguish 'can tell apart' from 'can name the colour': ${verdict.headline}",
             verdict.headline.contains("颜色种类"),
         )
+    }
+
+    @Test
+    fun `two colours of the same family never fake a hue collapse`() {
+        // The very pair that exposed the muted-colour bug above, once the namer
+        // stopped splitting tans across 棕/橙 (see ColorNamerTest): a greyish
+        // brown and a caramel are *both* brown to normal vision, and the
+        // simulation barely moves them (chroma 0.079 → 0.074, hue gap 0° → 0°).
+        // Claiming a lost colour family here would be a false alarm, so the
+        // verdict must stay an ordinary "these are close" answer.
+        val verdict = pair("#85796C", "#B07A3C", CvdType.DEUTERANOMALY)
+
+        assertTrue("both are brown now: ${verdict.first.baseWord} / ${verdict.second.baseWord}", verdict.sameFamily)
+        assertFalse("no family may be reported as hidden", verdict.familyHiddenFromUser)
+        assertFalse("nothing collapsed here", verdict.hueCollapsed)
+        assertEquals(0, verdict.normalHueGapDeg)
+        assertTrue("still actionable: ${verdict.advice}", verdict.advice.isNotEmpty())
+        assertFalse(verdict.advice.contains("不用特别担心"))
     }
 
     @Test

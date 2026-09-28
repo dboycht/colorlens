@@ -122,7 +122,7 @@ object ColorNamer {
 
     /** 米: pale warm near-whites. */
     const val CREAM_MIN_L = 0.85f
-    const val CREAM_MAX_C = 0.065f
+    const val CREAM_MAX_C = 0.072f
     const val CREAM_HUE_MIN = 55f
     const val CREAM_HUE_MAX = 110f
 
@@ -133,12 +133,21 @@ object ColorNamer {
     const val PINK_MAX_HUE = 45f
     const val PINK_MIN_HUE = 335f
 
-    /** 棕: a red/orange hue that is dark or dull. */
+    /** 棕: a warm hue that is dark or dull.
+     *
+     * The hue window reaches 88°, **not** 70°: wood, tan, khaki and sand live at
+     * 74–86° (white oak 76.8°, oak 75.5°, khaki 80.0°, and the tan actually
+     * measured off a real photo of wood grain 78.6°). With a 70° ceiling every
+     * wooden surface fell through to 橙 and the app called oak 「灰橙」.
+     * Vivid yellows are kept out by chroma instead of by hue (goldenrod
+     * 84°/C 0.147 → 深黄, gold 95.3° → 黄).
+     */
     const val BROWN_HUE_MIN = 15f
-    const val BROWN_HUE_MAX = 70f
+    const val BROWN_HUE_MAX = 88f
     const val BROWN_MAX_C_DARK = 0.13f
-    const val BROWN_MAX_L_DARK = 0.58f
-    const val BROWN_MAX_C_DULL = 0.075f
+    const val BROWN_MAX_L_DARK = 0.70f
+    const val BROWN_MAX_C_DULL = 0.10f
+    const val BROWN_MAX_L_DULL = 0.88f
 
     /**
      * A colour within this many degrees of 红's hue is *red that happens to be
@@ -296,12 +305,17 @@ object ColorNamer {
             return FamilyChoice(PINK)
         }
 
-        // 棕 — brown has no hue of its own: it is a red/orange hue made dark or
-        // dull. The distance from 红's hue is what keeps dark *reds* red.
+        // 棕 — brown has no hue of its own: it is a warm hue made dark or dull.
+        // The distance from 红's hue is what keeps dark *reds* red. Two ways in,
+        // both measured (tests pin each boundary):
+        //  - dull: low chroma below L 0.88 — wood, tan, khaki, greige. This is
+        //    the clause that keeps 木纹 out of 橙;
+        //  - dark: darker but more chromatic — sienna, leather, peru. The
+        //    lightness ceiling is what keeps carrots (L 0.72+) and pumpkins 橙.
         val farFromRed = ColorMath.hueDeltaDegrees(hue, redHue) > BROWN_MIN_RED_DISTANCE
-        val darkEnough = light < BROWN_MAX_L_DARK && chroma < BROWN_MAX_C_DARK
-        val dullEnough = chroma < BROWN_MAX_C_DULL
-        if (hue >= BROWN_HUE_MIN && hue <= BROWN_HUE_MAX && farFromRed && (darkEnough || dullEnough)) {
+        val dullBrown = chroma < BROWN_MAX_C_DULL && light < BROWN_MAX_L_DULL
+        val darkBrown = light < BROWN_MAX_L_DARK && chroma < BROWN_MAX_C_DARK
+        if (hue >= BROWN_HUE_MIN && hue <= BROWN_HUE_MAX && farFromRed && (dullBrown || darkBrown)) {
             return FamilyChoice(BROWN)
         }
 
