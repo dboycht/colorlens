@@ -1,32 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The themed-icon (monochrome) layer: the same mark as the foreground, but in one
-     colour, because the system takes this layer's alpha and tints it itself.
+<!-- The themed-icon (monochrome) layer: the same wheel, but in one colour, because the
+     system takes this layer's alpha and tints it itself. The three arcs of the
+     foreground cover the circle exactly, so here they are simply drawn as one full
+     ring — identical silhouette, nothing to keep in sync.
 
-     It deliberately repeats the foreground's geometry rather than reusing the file:
-     a themed icon wants a solid silhouette (no teal accent to lose), and keeping
-     the coordinates identical means the safe-zone assertions in LauncherIconTest
-     cover both layers. Extents from the centre are the same as the foreground. -->
+     Extent from the centre: radius 25 + half of the 9-wide stroke = 29.5, same as the
+     foreground (and asserted by LauncherIconTest). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- lens ring -->
+    <!-- the wheel as a single ring -->
     <path
-        android:pathData="M54,54 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0"
+        android:pathData="M54,54 m-25,0 a25,25 0 1,0 50,0 a25,25 0 1,0 -50,0"
         android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="6" />
-
-    <!-- sampled colour, in the middle -->
-    <path
-        android:pathData="M54,54 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0"
-        android:fillColor="#FFFFFFFF" />
-
-    <!-- crosshair ticks -->
-    <path
-        android:pathData="M54,27 L54,36 M54,81 L54,72 M27,54 L36,54 M81,54 L72,54"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3.5"
-        android:strokeLineCap="round" />
+        android:strokeWidth="9" />
 </vector>

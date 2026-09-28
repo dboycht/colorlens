@@ -5,6 +5,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,7 +59,8 @@ class LauncherIconTest {
         report.append("colorlens 启动图标几何 · 画布 108×108，圆心 (54,54)，安全圆半径 33\n")
         report.append("判据：每个元素的 maxRadius（含描边，保守取值）必须 ≤ 33；整个标记的包围盒中心必须落在 (54,54) ±1.5\n")
         report.append("-".repeat(104)).append('\n')
-        report.append("层 / 元素".padEnd(46)).append("maxRadius    包围盒 x        y\n")
+        report.append("层".padEnd(26)).append("元素".padEnd(34)).append("maxRadius".padEnd(12))
+            .append("包围盒 x".padEnd(16)).append("包围盒 y\n")
 
         for (layer in layers) {
             val file = File(layer)
@@ -90,9 +92,10 @@ class LauncherIconTest {
                         "(limit $SAFE_RADIUS) — the launcher mask will cut it",
                     shape.maxRadius <= SAFE_RADIUS,
                 )
-                report.append("$layer".substringAfterLast('/').padEnd(46))
+                report.append(layer.substringAfterLast('/').padEnd(26))
+                report.append(shape.what.padEnd(34))
                 report.append("%-12s".format("%.2f".format(shape.maxRadius)))
-                report.append("%-14s".format("[%.2f,%.2f]".format(shape.minX, shape.maxX)))
+                report.append("%-16s".format("[%.2f,%.2f]".format(shape.minX, shape.maxX)))
                 report.append("[%.2f,%.2f]".format(shape.minY, shape.maxY)).append('\n')
             }
 
@@ -183,10 +186,18 @@ class LauncherIconTest {
         Regex("$name=\"([^\"]*)\"").find(element)?.groupValues?.get(1)
 
     /**
-     * Turns one pathData into shapes. Two idioms are accepted — the circle idiom and
-     * straight lines — and *anything left over fails the test*, so adding a curve or a
-     * relative line to the icon forces whoever does it to extend this parser (and
-     * therefore to re-check the safe zone) instead of quietly escaping it.
+     * Turns one pathData into shapes. Three idioms are accepted — the circle idiom,
+     * circular arcs, and straight lines — and *anything left over fails the test*, so
+     * adding a curve or a relative line to the icon forces whoever does it to extend
+     * this parser (and therefore to re-check the safe zone) instead of quietly
+     * escaping it.
+     *
+     * Arcs are the interesting case: the path only gives two endpoints and a radius,
+     * so the circle they belong to is **derived** (the two candidate centres are
+     * solved for and the one nearer the canvas centre is taken). That keeps the
+     * centring assertion meaningful — a wheel nudged off-centre moves the derived
+     * centre and fails — and the extents are then taken from the full ring, which is
+     * conservative for a 120° arc.
      */
     private fun shapesOf(pathData: String, strokeWidth: Float, roundCap: Boolean, where: String): List<Shape> {
         val half = strokeWidth / 2f
@@ -208,6 +219,29 @@ class LauncherIconTest {
             val extent = rx + half
             shapes += Shape(
                 what = "circle r=$rx",
+                centreX = cx,
+                centreY = cy,
+                maxRadius = hypot(cx - CENTRE, cy - CENTRE) + extent,
+                minX = cx - extent,
+                maxX = cx + extent,
+                minY = cy - extent,
+                maxY = cy + extent,
+            )
+            rest = rest.replace(match.value, " ")
+        }
+
+        for (match in ARC.findAll(rest)) {
+            val x1 = match.groupValues[1].toFloat()
+            val y1 = match.groupValues[2].toFloat()
+            val rx = match.groupValues[3].toFloat()
+            val ry = match.groupValues[4].toFloat()
+            val x2 = match.groupValues[7].toFloat()
+            val y2 = match.groupValues[8].toFloat()
+            assertEquals("$where: arcs must be circular (rx == ry)", rx, ry, 1e-3f)
+            val (cx, cy) = arcCentre(x1, y1, x2, y2, rx, where)
+            val extent = rx + half
+            shapes += Shape(
+                what = "arc r=$rx around (%.2f,%.2f)".format(cx, cy),
                 centreX = cx,
                 centreY = cy,
                 maxRadius = hypot(cx - CENTRE, cy - CENTRE) + extent,
@@ -248,6 +282,26 @@ class LauncherIconTest {
         return shapes
     }
 
+    /**
+     * The circle an arc belongs to, solved from its two endpoints and its radius.
+     * Two circles fit; the one nearer the canvas centre is the intended ring, so a
+     * ring dragged off-centre cannot hide by picking the other solution.
+     */
+    private fun arcCentre(x1: Float, y1: Float, x2: Float, y2: Float, r: Float, where: String): Pair<Float, Float> {
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val chord = hypot(dx, dy)
+        assertTrue("$where: arc endpoints are wider apart than its diameter", chord > 1e-3f)
+        assertTrue("$where: arc endpoints are wider apart than its diameter", chord <= 2f * r + 1e-3f)
+        val mx = (x1 + x2) / 2f
+        val my = (y1 + y2) / 2f
+        val h = sqrt(max(0f, r * r - (chord / 2f) * (chord / 2f)))
+        val px = -dy / chord
+        val py = dx / chord
+        val cand = listOf(mx + px * h to my + py * h, mx - px * h to my - py * h)
+        return cand.minByOrNull { hypot(it.first - CENTRE, it.second - CENTRE) }!!
+    }
+
     private companion object {
         /** Canvas centre and the radius of the guaranteed-visible circle (66dp across). */
         const val CENTRE = 54f
@@ -261,5 +315,11 @@ class LauncherIconTest {
 
         /** `M x,y L x,y` straight segments. */
         val LINE = Regex("M([-\\d.]+),([-\\d.]+)\\s+L([-\\d.]+),([-\\d.]+)")
+
+        /** `M x,y A r,r 0 0,1 x,y` circular arc (the colour wheel is drawn as three of these). */
+        val ARC = Regex(
+            "M([-\\d.]+),([-\\d.]+)\\s+A([-\\d.]+),([-\\d.]+)\\s+0\\s+([01]),([01])\\s+" +
+                "([-\\d.]+),([-\\d.]+)",
+        )
     }
 }
