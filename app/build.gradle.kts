@@ -19,7 +19,7 @@ android {
 
         // Single source of truth for the version: `versionName` below.
         // `versionCode` is only bumped on release.
-        versionCode = 2
+        versionCode = 3
         // 1.0.1 was tagged on 2026-09-28; by the project's convention the next
         // development round bumps the patch number, so this round is 1.0.2.
         // 1.0.2 is the first release that ships an APK, so it also carries the
