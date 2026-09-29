@@ -140,7 +140,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = "这台手机没有装中文语音包，播报可能听不清。",
+                            text = speaker.unavailableReason
+                                ?: "这台手机没有装中文语音包，播报可能听不清。",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )

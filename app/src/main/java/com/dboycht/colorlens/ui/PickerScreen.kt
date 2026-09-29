@@ -106,6 +106,7 @@ fun PickerScreen(
     onNeedPhoto: () -> Unit,
     onRetake: () -> Unit,
     modifier: Modifier = Modifier,
+    speechNote: String? = null,
 ) {
     val bitmap = store.bitmap
 
@@ -330,6 +331,17 @@ fun PickerScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(PickerLayout.ROW_GAP),
                     ) {
+                        // Speech that cannot work says so instead of playing dead. This
+                        // lives inside the scrolling area, not as its own fixed row:
+                        // every fixed row here would come straight out of the
+                        // description's budget and shrink the card.
+                        speechNote?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                         reading?.let {
                             ColorCard(reading = it, showHex = settings.showHex)
                         }
@@ -354,6 +366,7 @@ fun PickerScreen(
                 ) {
                     Button(
                         onClick = { reading?.let { onSpeak(it.spokenText(settings)) } },
+                        enabled = speechNote == null,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("朗读")

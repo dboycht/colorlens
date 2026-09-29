@@ -24,7 +24,7 @@ android {
         // development round bumps the patch number, so this round is 1.0.2.
         // 1.0.2 is the first release that ships an APK, so it also carries the
         // first versionCode above 1.
-        versionName = "1.0.2"
+        versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

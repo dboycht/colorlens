@@ -7,6 +7,19 @@
         android:name="android.hardware.camera.any"
         android:required="false" />
 
+    <!--
+        Speech needs to see the installed TTS engines so it can fall back to one
+        explicitly when the system default is unset or refuses to bind (the reference
+        ColorOS phone ships com.oplus.ttsaccessibilityengine with tts_default_synth
+        unset). Without this, package visibility on API 30+ hides them all and the
+        fallback can never find anything. No network, no other packages.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

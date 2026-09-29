@@ -156,6 +156,9 @@ private fun App() {
                     onOpenCompare = { tab = Tab.COMPARE },
                     onNeedPhoto = { tab = Tab.CAMERA },
                     onRetake = { tab = Tab.CAMERA },
+                    // Speech that cannot work must not look like it did: the button
+                    // goes disabled and this reason appears under the photo.
+                    speechNote = speaker.unavailableReason,
                 )
 
                 Tab.COMPARE -> CompareScreen(
