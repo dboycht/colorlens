@@ -9,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.dboycht.colorlens.BuildConfig
+import com.dboycht.colorlens.color.ColorNamer
+import com.dboycht.colorlens.color.Rgb8
 import java.util.Locale
 
 /**
@@ -206,3 +208,25 @@ class Speaker(context: Context) {
         const val UTTERANCE_ID = "colorlens.reading"
     }
 }
+
+/**
+ * What the settings screen's 测试语音 button reads out.
+ *
+ * Deliberately not a hard-coded sentence: it runs the real namer over a fixed sample
+ * colour and formats it through the same [spokenText] the picker uses, so the test
+ * speaks exactly what the app would say for that colour — including the 简短/详细
+ * choice and any "更像 X"/"介于 X 和 Y" wording. A hand-written sample would drift
+ * away from the real phrasing and stop being a test of anything.
+ *
+ * Pure (no Android APIs), so the JVM tests can pin the sentences.
+ */
+fun testSpeechText(settings: AppSettings): String =
+    ColorNamer.read(TEST_SPEECH_COLOUR).spokenText(settings)
+
+/**
+ * The sample: a warm mid brown, the kind of colour this app is pointed at (wood,
+ * skin, food) and one that gets a modifier, so a 详细 test hears more than just a
+ * name. Chosen by looking at the sentence it produces, not by picking pretty numbers.
+ */
+private val TEST_SPEECH_COLOUR = Rgb8(0x8A, 0x5A, 0x3B)
+

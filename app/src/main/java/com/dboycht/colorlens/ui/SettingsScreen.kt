@@ -14,6 +14,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -39,6 +40,7 @@ fun SettingsScreen(
     speaker: Speaker,
     onChange: ((AppSettings) -> AppSettings) -> Unit,
     onInstallVoice: () -> Unit,
+    onTestSpeech: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -130,6 +132,27 @@ fun SettingsScreen(
                 when (settings.speechDetail) {
                     SpeechDetail.BRIEF -> "简短：取色只念色名，对比只念「A 是什么、B 是什么、分不分得出来」。"
                     SpeechDetail.DETAILED -> "详细：再念明暗、冷暖，以及对比时可以靠什么分辨。"
+                },
+            )
+            // A test button, because "没声音" has several very different causes — the
+            // phone has no engine, the engine has no Chinese voice, the media volume is
+            // zero — and until now the only way to tell them apart was to take a photo
+            // first. It speaks for real (not a sample string): the sentence below is
+            // produced by the same namer and the same 简短/详细 choice the picker uses,
+            // so what the user hears here is what they will hear while picking.
+            OutlinedButton(
+                onClick = onTestSpeech,
+                enabled = speaker.unavailableReason == null,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (speaker.speaking) "正在朗读…" else "测试语音")
+            }
+            Hint(
+                buildString {
+                    append("会念：「").append(testSpeechText(settings)).append("」")
+                    // The button is a test, so it speaks even with 播报颜色 off; say so
+                    // rather than letting the user wonder why this one makes noise.
+                    if (!settings.speechEnabled) append("（「播报颜色」关着，测试仍会出声）")
                 },
             )
             if (!speaker.chineseAvailable) {

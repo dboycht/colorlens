@@ -135,4 +135,47 @@ class SpeechTest {
         assertTrue("'and did an engine ever arrive?'", speaker.contains("onInit status="))
         assertTrue("'with a Chinese voice?'", speaker.contains("chinese=\$chineseAvailable"))
     }
+
+    @Test
+    fun `the test sentence is a real reading and follows the detail setting`() {
+        // The settings button must not speak a hand-written string: it goes through the
+        // namer and the same 简短/详细 choice as the picker, so what the user hears in
+        // settings is what they will hear while picking. Printed so the wording can be
+        // eyeballed from the test report without a device.
+        val brief = testSpeechText(AppSettings(speechDetail = SpeechDetail.BRIEF))
+        val detailed = testSpeechText(AppSettings(speechDetail = SpeechDetail.DETAILED))
+        println("测试语音(简短) = $brief")
+        println("测试语音(详细) = $detailed")
+        assertTrue("a reading is a sentence: '$brief'", brief.endsWith("。"))
+        assertTrue(
+            "详细 must be 简短 plus the extra detail: '$detailed'",
+            detailed.startsWith(brief),
+        )
+        assertTrue("详细 must talk about lightness: '$detailed'", detailed.contains("明度"))
+        assertTrue("详细 must be longer: '$detailed'", detailed.length > brief.length)
+    }
+
+    @Test
+    fun `settings can test speech without taking a photo first`() {
+        val settings = File("src/main/java/com/dboycht/colorlens/ui/SettingsScreen.kt").readText()
+        assertTrue("there must be a 测试语音 button", settings.contains("\"测试语音\""))
+        assertTrue("it must accept the callback", settings.contains("onTestSpeech: () -> Unit"))
+        assertTrue("and be wired to it", settings.contains("onClick = onTestSpeech"))
+        assertTrue(
+            "a phone that cannot speak must not offer a button that does nothing",
+            settings.contains("enabled = speaker.unavailableReason == null"),
+        )
+        assertTrue(
+            "the user must be able to read what it will say before tapping",
+            settings.contains("会念"),
+        )
+        assertTrue(
+            "the test speaks with 播报颜色 off, and says so instead of surprising the user",
+            settings.contains("测试仍会出声"),
+        )
+        assertTrue(
+            "the test must bypass the enabled-checking wrapper, or muting it hides the bug",
+            activity.contains("onTestSpeech = { speaker.speak(testSpeechText(settings)) }"),
+        )
+    }
 }

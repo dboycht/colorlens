@@ -32,6 +32,7 @@ import com.dboycht.colorlens.ui.SettingsScreen
 import com.dboycht.colorlens.ui.SettingsStore
 import com.dboycht.colorlens.ui.SimulateScreen
 import com.dboycht.colorlens.ui.Speaker
+import com.dboycht.colorlens.ui.testSpeechText
 
 /**
  * 辨色助手 — a colour-reading assistant for people with colour-vision deficiency.
@@ -183,6 +184,10 @@ private fun App() {
                     settings = settings,
                     speaker = speaker,
                     onChange = { transform -> settingsStore.update(transform) },
+                    // A test speaks regardless of 播报颜色: it exists to prove the phone
+                    // can speak at all, and silence would be indistinguishable from the
+                    // switch doing its job.
+                    onTestSpeech = { speaker.speak(testSpeechText(settings)) },
                     onInstallVoice = {
                         // Not every device can service this intent. Swallowing the
                         // failure is acceptable: the settings card already told the
