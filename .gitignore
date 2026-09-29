@@ -17,6 +17,11 @@ keystore.properties
 *.jks
 *.keystore
 
+# Release signing material: the keystore, its passwords and its README all live
+# here and must never leave this machine. `*.jks` above already covers the key
+# itself; this keeps the password notes out of the repository too.
+keystore/
+
 # Machine-local TLS truststore (see gradle.properties): contains this
 # machine's local proxy root certificates. Never publish.
 .certs/
